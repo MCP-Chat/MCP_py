@@ -3,9 +3,13 @@ import asyncio
 import os
 import boto3
 import logging
+from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_aws import ChatBedrock
 from langchain.schema.messages import HumanMessage, SystemMessage, ToolMessage
+
+# .env 파일 로드
+load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +25,12 @@ st.set_page_config(
 st.title("🤖 AWS 전문 어시스턴트")
 st.markdown("AWS CLI 명령어와 공식 문서를 활용할 수 있는 AI 어시스턴트")
 
+# 환경 변수에서 설정 로드
+AWS_REGION = os.getenv('AWS_REGION', 'ap-northeast-2')
+BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'apac.anthropic.claude-3-5-sonnet-20241022-v2:0')
+BEDROCK_REGION = os.getenv('BEDROCK_REGION', 'ap-northeast-2')
+FASTMCP_LOG_LEVEL = os.getenv('FASTMCP_LOG_LEVEL', 'ERROR')
+
 # 세션 상태 초기화
 if "cli_messages" not in st.session_state:
     st.session_state.cli_messages = []
@@ -34,28 +44,56 @@ tab1, tab2 = st.tabs(["💻 AWS CLI", "📚 AWS 문서"])
 async def invoke_cli_agent(user_input: str):
     """MCP 클라이언트를 사용하여 에이전트 호출"""
     # MCP Client 초기화
-    env_vars = {'AWS_REGION': 'ap-northeast-2'}
+    env_vars = {'AWS_REGION': AWS_REGION}
     
-    # Assume Role 처리
-    if st.session_state.role_arn:
-        try:
-            sts_client = boto3.client('sts', region_name='ap-northeast-2')
-            assumed_role = sts_client.assume_role(
-                RoleArn=st.session_state.role_arn,
-                RoleSessionName='streamlit-mcp-session'
-            )
-            credentials = assumed_role['Credentials']
+    # Assume Role 처리 (필수)
+    if not st.session_state.role_arn:
+        st.error("⚠️ Role ARN이 설정되지 않았습니다. 사이드바에서 Role ARN을 입력해주세요.")
+        return "Role ARN을 설정해야 AWS CLI 명령어를 실행할 수 있습니다."
+    
+    try:
+        sts_client = boto3.client('sts', region_name=AWS_REGION)
+        assumed_role = sts_client.assume_role(
+            RoleArn=st.session_state.role_arn,
+            RoleSessionName='streamlit-mcp-session'
+        )
+        credentials = assumed_role['Credentials']
+        
+        env_vars.update({
+            'AWS_ACCESS_KEY_ID': credentials['AccessKeyId'],
+            'AWS_SECRET_ACCESS_KEY': credentials['SecretAccessKey'],
+            'AWS_SESSION_TOKEN': credentials['SessionToken']
+        })
             
-            env_vars.update({
-                'AWS_ACCESS_KEY_ID': credentials['AccessKeyId'],
-                'AWS_SECRET_ACCESS_KEY': credentials['SecretAccessKey'],
-                'AWS_SESSION_TOKEN': credentials['SessionToken']
-            })
+        # 디버깅: AssumeRole 후 현재 자격 증명 확인
+        try:
+            assumed_sts = boto3.client('sts', 
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
+                region_name=AWS_REGION
+            )
+            caller_identity = assumed_sts.get_caller_identity()
             logger.info(f"Successfully assumed role: {st.session_state.role_arn}")
-        except Exception as e:
-            logger.error(f"Failed to assume role: {e}")
-            st.error(f"Role assume 실패: {str(e)}")
-            return "Role assume에 실패했습니다. 권한을 확인해주세요."
+            logger.info(f"Current identity: {caller_identity}")
+            st.info(f"✅ Assume Role 성공: {caller_identity.get('Arn', 'Unknown')}")
+        except Exception as debug_e:
+            logger.warning(f"GetCallerIdentity failed (권한 없음): {debug_e}")
+            logger.info(f"Successfully assumed role: {st.session_state.role_arn}")
+    except Exception as e:
+        logger.error(f"Failed to assume role: {e}")
+        
+        # 디버깅: 현재 기본 자격 증명 확인 (로그만)
+        try:
+            base_sts = boto3.client('sts', region_name=AWS_REGION)
+            base_identity = base_sts.get_caller_identity()
+            logger.info(f"Base identity: {base_identity}")
+        except Exception as debug_e:
+            logger.warning(f"Base GetCallerIdentity failed: {debug_e}")
+        
+        st.error(f"Role assume 실패: {str(e)}")
+        
+        return "Role assume에 실패했습니다. 권한을 확인해주세요."
     
     mcp_client = MultiServerMCPClient({
         'aws_api': {
@@ -71,11 +109,11 @@ async def invoke_cli_agent(user_input: str):
     logger.info(f"Total tools loaded: {len(tools)}")
     
     # Bedrock 클라이언트 설정 (원래 자격 증명 사용)
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name='ap-northeast-2')
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name=BEDROCK_REGION)
     
     chat_model = ChatBedrock(
         client=bedrock_runtime,
-        model_id='apac.anthropic.claude-3-5-sonnet-20241022-v2:0',
+        model_id=BEDROCK_MODEL_ID,
         model_kwargs={'temperature': 0.3, 'max_tokens': 4096}
     )
     
@@ -129,7 +167,7 @@ async def invoke_doc_agent(user_input: str):
             'transport': 'stdio',
             'command': 'uvx',
             'args': ['awslabs.aws-documentation-mcp-server@latest'],
-            'env': {'FASTMCP_LOG_LEVEL': 'ERROR'}
+            'env': {'FASTMCP_LOG_LEVEL': FASTMCP_LOG_LEVEL}
         }
     })
     
@@ -138,11 +176,11 @@ async def invoke_doc_agent(user_input: str):
     logger.info(f"Doc total tools loaded: {len(tools)}")
     
     # Bedrock 클라이언트 설정 (원래 자격 증명 사용)
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name='ap-northeast-2')
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name=BEDROCK_REGION)
         
     chat_model = ChatBedrock(
         client=bedrock_runtime,
-        model_id='apac.anthropic.claude-3-5-sonnet-20241022-v2:0',
+        model_id=BEDROCK_MODEL_ID,
         model_kwargs={
             'temperature': 0.1,
             'max_tokens': 4096,
@@ -368,7 +406,7 @@ with st.sidebar:
     
     # Role ARN 입력
     role_arn = st.text_input(
-        "AWS Role ARN (선택사항)",
+        "AWS Role ARN (CLI 필수 사항)",
         value=st.session_state.role_arn,
         placeholder="arn:aws:iam::123456789012:role/MyRole"
     )
@@ -393,7 +431,7 @@ with st.sidebar:
     st.markdown("- **MCP 프로토콜**: 표준 MCP 사용")
     st.markdown("- **MCP 서버**: AWS API + Documentation + Filesystem")
     st.markdown("- **모델**: Claude 3.5 Sonnet")
-    st.markdown("- **리전**: ap-northeast-2")
+    st.markdown(f"- **리전**: {AWS_REGION}")
     st.markdown("- **기능**: AWS CLI + 문서 검색 + 파일 관리")
     
     st.markdown("---")

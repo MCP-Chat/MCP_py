@@ -1,167 +1,173 @@
-# 🤖 Multi-Agent MCP Chat Server
+# 🤖 AWS 전문 AI 어시스턴트
 
-**Model Context Protocol (MCP)** 기반의 다중 에이전트 AI 어시스턴트 애플리케이션
+> **Model Context Protocol (MCP)** 기반의 AWS 전문 AI 어시스턴트
 
-## ✨ 주요 특징
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)
+![AWS](https://img.shields.io/badge/AWS-Bedrock-orange.svg)
+![MCP](https://img.shields.io/badge/MCP-Protocol-green.svg)
 
-- **2개의 전문화된 AI 에이전트**: 각각 다른 MCP 서버를 사용하여 특화된 기능 제공
-- **실시간 진행 상황 표시**: AI 에이전트의 작업 과정을 시각적으로 확인
-- **독립적인 채팅 세션**: 각 탭별로 별도의 대화 히스토리 관리
-- **Claude 3.5 Sonnet 통합**: AWS Bedrock을 통한 고성능 AI 모델 활용
+## 📋 프로젝트 개요
 
-## 🏗️ 아키텍처
+Model Context Protocol을 활용하여 AWS 리소스 관리와 문서 검색을 자동화하는 지능형 챗봇 시스템입니다. Claude 3.5 Sonnet과 Cross-Account Role을 통해 안전하고 효율적인 AWS 운영을 지원합니다.
+
+### 🎯 핵심 기능
+- **AWS CLI 자동화**: 자연어로 AWS 리소스 조회 및 관리
+- **지능형 문서 검색**: AWS 공식 문서 실시간 검색 및 분석
+- **Cross-Account 보안**: Assume Role을 통한 안전한 권한 관리
+- **실시간 진행 표시**: AI 작업 과정 시각화
+
+## 🔧 동작 원리
 
 ```
-Streamlit UI
-├── 💻 AWS CLI 탭
-│   ├── MCP Client (awslabs.aws-api-mcp-server)
-│   ├── AWS STS (Assume Role 지원)
-│   └── Claude 3.5 Sonnet
-└── 📚 AWS 문서 탭
-    ├── MCP Client (awslabs.aws-documentation-mcp-server)
-    ├── 실시간 진행 상황 표시
-    └── Claude 3.5 Sonnet
+사용자 질문 → Streamlit UI → LangChain Agent (MCP Client)
+                                      ↓
+                              Claude 3.5 Sonnet
+                                      ↓
+                            (어떤 MCP 도구를 사용할지 판단)
+                                      ↓
+                              MCP Server → AWS API/문서
+                                      ↓
+                              결과 데이터 반환
+                                      ↓
+                              Claude 3.5 Sonnet
+                                      ↓
+                            사용자 친화적 답변 생성
+                                      ↓
+                              Streamlit UI → 사용자
 ```
 
-## 🎯 에이전트별 기능
+## 🚀 빠른 시작
 
-### 💻 AWS CLI 에이전트
-- **실시간 AWS 리소스 관리**: EC2, S3, Lambda, RDS 등 모든 AWS 서비스
-- **Cross-Account 접근**: Assume Role을 통한 다중 계정 관리
-- **스마트 결과 정리**: JSON 응답을 사용자 친화적인 형태로 자동 변환
-
-### 📚 AWS 문서 에이전트
-- **지능형 문서 검색**: AWS 공식 문서에서 관련 정보 자동 탐색
-- **상세 내용 분석**: 선택된 문서의 전체 내용을 읽고 요약
-- **진행 상황 시각화**: 검색 → 읽기 → 분석 과정을 실시간 표시
-- **참고 문서 링크**: 답변과 함께 원본 문서 URL 제공
-
-
-
-## 🔧 기술 스택
-
-### Core Technologies
-- **Frontend**: Streamlit (웹 UI)
-- **AI Model**: Claude 3.5 Sonnet (AWS Bedrock)
-- **Protocol**: Model Context Protocol (MCP)
-- **Language**: Python 3.10+
-
-### MCP Servers
-- `awslabs.aws-api-mcp-server@latest` - AWS CLI 명령어 실행
-- `awslabs.aws-documentation-mcp-server@latest` - AWS 문서 검색
-
-### Python Dependencies
-```
-streamlit
-langchain-mcp-adapters
-langchain-aws
-boto3
-asyncio
-```
-
-## ⚙️ 설정 및 실행
-
-### 1. 환경 설정
+### 1. 설치
 ```bash
-# AWS 자격 증명 설정
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
-export AWS_REGION="ap-northeast-2"
-
-# 선택사항: AWS Profile 사용
-export AWS_PROFILE="your-profile"
+git clone <repository-url>
+cd mcp_test
+pip install -r requirements.txt
 ```
 
-### 2. 의존성 설치
-```bash
-pip install streamlit langchain-mcp-adapters langchain-aws boto3
+### 2. 환경 설정
+`.env` 파일 생성:
+```env
+AWS_ACCESS_KEY_ID=your-access-key-here
+AWS_SECRET_ACCESS_KEY=your-secret-key-here
+AWS_REGION=ap-northeast-2
 ```
 
-### 3. 애플리케이션 실행
+### 3. AWS 권한 설정
+
+#### Agent 기본 자격 증명 권한
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream"
+            ],
+            "Resource": "arn:aws:bedrock:*:*:*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Resource": "arn:aws:iam::*:role/*"
+        }
+    ]
+}
+```
+
+#### Cross-Account Role 설정
+**Trust Policy:**
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::AGENT_ACCOUNT_ID:user/YOUR_AGENT_USER_NAME"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+**Permission Policy:**
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:Describe*",
+                "s3:List*",
+                "s3:Get*",
+                "lambda:List*",
+                "lambda:Get*",
+                "rds:Describe*",
+                "iam:List*",
+                "iam:Get*",
+                "cloudformation:List*",
+                "cloudformation:Describe*",
+                "logs:Describe*",
+                "logs:Get*",
+                "cloudwatch:List*",
+                "cloudwatch:Get*",
+                "sts:GetCallerIdentity"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### 4. 실행
 ```bash
 streamlit run streamlit_chat_server.py
 ```
 
-### 4. Assume Role 설정 (선택사항)
-사이드바에서 Role ARN 입력:
-```
-arn:aws:iam::123456789012:role/CrossAccountRole
-```
+### 5. 사용
+1. 사이드바에서 **Role ARN** 입력 (필수)
+2. AWS CLI 또는 문서 검색 탭 선택
+3. 자연어로 질문 입력
 
 ## 💡 사용 예시
 
-### 💻 AWS CLI 에이전트
-```
-"EC2 인스턴스 목록을 테이블 형태로 보여줘"
-"S3 버킷의 암호화 설정 상태를 확인해줘"
-"Lambda 함수들의 메모리 사용량을 비교해줘"
-"RDS 인스턴스의 백업 설정을 조회해줘"
-```
+### AWS CLI 명령어
+- "현재 실행 중인 EC2 인스턴스를 테이블로 보여줘"
+- "S3 버킷별 용량과 암호화 상태를 확인해줘"
+- "Lambda 함수들의 메모리 사용량을 비교해줘"
 
-### 📚 AWS 문서 에이전트
-```
-"ECS Fargate 서비스 생성 방법을 단계별로 알려줘"
-"Lambda 함수의 환경 변수 설정 모범 사례는?"
-"S3 버킷 정책과 IAM 정책의 차이점을 설명해줘"
-"CloudFormation 템플릿 작성 가이드를 찾아줘"
-```
+### AWS 문서 검색
+- "ECS Fargate 서비스 생성 방법을 단계별로 알려줘"
+- "Lambda 환경 변수 설정 모범 사례 문서 찾아줘"
+- "S3 버킷 정책 작성 가이드를 검색해줘"
 
+## 🛠️ 기술 스택
 
+- **Frontend**: Streamlit
+- **AI Model**: Claude 3.5 Sonnet (AWS Bedrock)
+- **Protocol**: Model Context Protocol (MCP)
+- **Backend**: Python 3.10+
+- **Integration**: LangChain
+- **MCP Servers**: 
+  - `awslabs.aws-api-mcp-server` (AWS CLI)
+  - `awslabs.aws-documentation-mcp-server` (AWS 문서)
 
-## 🔒 보안 고려사항
+## 🔐 보안 특징
 
-### AWS 권한 관리
-- **최소 권한 원칙**: 필요한 AWS 서비스에만 접근 권한 부여
-- **Assume Role 활용**: 임시 자격 증명을 통한 안전한 Cross-Account 접근
-- **세션 격리**: 각 요청마다 독립적인 세션 생성
+- **권한 분리**: Agent 기본 자격 증명과 CLI 실행 권한 분리
+- **Cross-Account**: Assume Role을 통한 안전한 계정 간 접근
+- **읽기 전용**: 모든 AWS 작업은 조회(Describe/List/Get)만 허용
+- **임시 자격 증명**: 시간 제한된 권한 사용
 
+## 📊 주요 성과
 
-
-## 📊 모니터링 및 로깅
-
-### 로그 레벨
-- `INFO`: 일반적인 실행 정보 및 도구 호출 내역
-- `ERROR`: 오류 발생 시 상세 스택 트레이스
-- `DEBUG`: MCP 서버 통신 및 응답 상세 정보
-
-### 진행 상황 추적
-- **AWS 문서 탭**: 검색 → 문서 선택 → 내용 읽기 → 답변 생성 과정 시각화
-- **실시간 상태 업데이트**: 각 단계별 진행률 및 상태 메시지 표시
-
-## 🐛 트러블슈팅
-
-### AWS 관련 오류
-```bash
-# 자격 증명 확인
-aws sts get-caller-identity
-
-# 권한 확인
-aws iam get-user
-aws sts assume-role --role-arn <ROLE_ARN> --role-session-name test
-```
-
-### MCP 서버 연결 오류
-- **네트워크 연결**: 인터넷 연결 및 방화벽 설정 확인
-- **패키지 설치**: `uvx` 도구 및 MCP 서버 패키지 설치 상태 확인
-- **환경 변수**: AWS 자격 증명 및 리전 설정 확인
-
-### 일반적인 해결 방법
-1. **애플리케이션 재시작**: Streamlit 서버 재시작
-2. **세션 초기화**: 사이드바의 "대화 기록 초기화" 버튼 사용
-3. **로그 확인**: 터미널에서 상세 오류 메시지 확인
-
-## 🚀 확장 가능성
-
-### 추가 가능한 MCP 서버
-- **GitHub**: 코드 저장소 관리
-- **Slack**: 팀 커뮤니케이션
-- **Database**: PostgreSQL, MySQL 연동
-- **Kubernetes**: 클러스터 관리
-
-### 커스텀 MCP 서버 개발
-- MCP 프로토콜 표준을 따라 자체 서버 개발 가능
-- 기업 내부 시스템과의 연동 확장
-
----
-
-**Made with ❤️ using Model Context Protocol**
+- ✅ **MCP 프로토콜 활용**: 최신 AI-시스템 통합 표준 적용
+- ✅ **보안 강화**: Cross-Account Role 기반 권한 관리
+- ✅ **실시간 처리**: 비동기 처리를 통한 응답성 향상
+- ✅ **사용자 경험**: 직관적 UI와 진행 상황 시각화
